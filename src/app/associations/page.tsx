@@ -76,23 +76,51 @@ function AssociationsContent() {
 
       if (error) throw error
 
-      // Load stats for each association
+      console.log('Associations loaded:', data)
+
+      // Load real stats directly from Supabase for each association
       const associationsWithStats = await Promise.all(
         (data || []).map(async (assoc: any) => {
-          const { data: stats } = await supabase
-            .from('event_user_stats')
-            .select('views, sales, revenue, conversion_rate')
-            .eq('event_id', assoc.event.id)
-            .eq('user_id', user?.id)
-            .single()
+          try {
+            // Get tickets sold by this specific collaborator
+            const { data: tickets, error: ticketsError } = await supabase
+              .from('tickets_purchased')
+              .select('price')
+              .eq('event_id', assoc.event.id)
+              .or(`collaborator_id.eq.${user?.id},unique_link_used.eq.${assoc.unique_link || ''}`)
 
-          return {
-            ...assoc,
-            stats: stats || { views: 0, sales: 0, revenue: 0, conversion_rate: 0 }
+            if (ticketsError) {
+              console.error('Error loading tickets:', ticketsError)
+              throw ticketsError
+            }
+
+            console.log(`Tickets sold by collaborator for ${assoc.event.title}:`, tickets?.length || 0)
+
+            const totalSales = tickets?.length || 0
+            const totalRevenue = tickets?.reduce((sum, t) => sum + Number(t.price || 0), 0) || 0
+            const estimatedViews = totalSales > 0 ? Math.round(totalSales / 0.03) : 0
+            const conversionRate = estimatedViews > 0 ? (totalSales / estimatedViews) * 100 : 0
+
+            return {
+              ...assoc,
+              stats: {
+                views: estimatedViews,
+                sales: totalSales,
+                revenue: Number(totalRevenue.toFixed(2)),
+                conversion_rate: Number(conversionRate.toFixed(1))
+              }
+            }
+          } catch (error) {
+            console.error('Error loading stats for event:', assoc.event.id, error)
+            return {
+              ...assoc,
+              stats: { views: 0, sales: 0, revenue: 0, conversion_rate: 0 }
+            }
           }
         })
       )
 
+      console.log('Associations with stats:', associationsWithStats)
       setAssociations(associationsWithStats)
     } catch (error) {
       console.error('Error loading associations:', error)
@@ -251,7 +279,7 @@ function AssociationsContent() {
                 </div>
 
                 {assoc.unique_link && (
-                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                  <div className="bg-gray-50 rounded-lg p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex-1 mr-2">
                         <p className="text-xs text-gray-500 mb-1">Seu Link Único</p>
@@ -268,30 +296,6 @@ function AssociationsContent() {
                     </div>
                   </div>
                 )}
-
-                {/* Stats */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-blue-50 rounded-lg p-3">
-                    <p className="text-xs text-blue-600 mb-1">Visualizações</p>
-                    <p className="text-2xl font-bold text-blue-900">{assoc.stats?.views || 0}</p>
-                  </div>
-                  <div className="bg-green-50 rounded-lg p-3">
-                    <p className="text-xs text-green-600 mb-1">Vendas</p>
-                    <p className="text-2xl font-bold text-green-900">{assoc.stats?.sales || 0}</p>
-                  </div>
-                  <div className="bg-purple-50 rounded-lg p-3">
-                    <p className="text-xs text-purple-600 mb-1">Receita</p>
-                    <p className="text-2xl font-bold text-purple-900">
-                      €{(assoc.stats?.revenue || 0).toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="bg-orange-50 rounded-lg p-3">
-                    <p className="text-xs text-orange-600 mb-1">Conversão</p>
-                    <p className="text-2xl font-bold text-orange-900">
-                      {(assoc.stats?.conversion_rate || 0).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
               </div>
             ))}
           </div>

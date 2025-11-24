@@ -1,0 +1,14 @@
+{
+  "imports": {
+    "stripe": "npm:stripe@^14.0.0",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "resend": "npm:resend@^3.0.0"
+  },
+  "tasks": {
+    "serve": "deno run --allow-all --watch https://deno.land/std/http/server.ts"
+  },
+  "compilerOptions": {
+    "lib": ["deno.window"],
+    "strict": true
+  }
+}

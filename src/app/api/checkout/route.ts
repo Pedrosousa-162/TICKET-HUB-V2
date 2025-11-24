@@ -7,7 +7,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
 
 export async function POST(req: NextRequest) {
   try {
-    const { eventId, eventTitle, ticketType, quantity, price, userId, collaboratorId } = await req.json()
+    const { eventId, eventTitle, ticketType, quantity, price, userId, collaboratorId, uniqueLinkUsed } = await req.json()
 
     // Validação
     if (!eventId || !ticketType || !quantity || !price) {
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
         quantity: quantity.toString(),
         userId: userId || 'guest',
         collaboratorId: collaboratorId || '',
+        uniqueLinkUsed: uniqueLinkUsed || '',
       },
     })
 

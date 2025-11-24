@@ -118,48 +118,30 @@ export default function EventPage() {
     if (!refCode) return
 
     try {
-      // Primeiro, buscar o link do colaborador
-      const { data: linkData, error: linkError } = await supabase
-        .from('collaborator_links')
-        .select('unique_code, collaborator_id')
-        .eq('unique_code', refCode)
+      // Buscar o colaborador pelo unique_link na tabela event_users
+      const { data: eventUserData, error: eventUserError } = await supabase
+        .from('event_users')
+        .select(`
+          unique_link,
+          user_id,
+          user:users!event_users_user_id_fkey(full_name)
+        `)
+        .eq('unique_link', refCode)
         .single()
 
-      console.log('Link data:', linkData)
-      console.log('Link error:', linkError)
+      console.log('Event user data:', eventUserData)
+      console.log('Event user error:', eventUserError)
 
-      if (linkError || !linkData) {
-        console.error('Error loading link:', linkError)
+      if (eventUserError || !eventUserData) {
+        console.error('Error loading collaborator:', eventUserError)
         return
       }
 
-      const link = linkData as { unique_code: string; collaborator_id: string }
-
-      // Depois, buscar o nome do colaborador
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('full_name')
-        .eq('id', link.collaborator_id)
-        .single()
-
-      console.log('User data:', userData)
-      console.log('User error:', userError)
-
-      if (userError || !userData) {
-        console.error('Error loading user:', userError)
-        // Mesmo assim mostra o banner, mas sem o nome
-        setReferralInfo({
-          collaborator_name: 'Um colaborador',
-          unique_code: link.unique_code
-        })
-        return
-      }
-
-      const user = userData as { full_name: string }
+      const eventUser = eventUserData as any
 
       setReferralInfo({
-        collaborator_name: user.full_name || 'Um colaborador',
-        unique_code: link.unique_code
+        collaborator_name: eventUser.user?.full_name || 'Um colaborador',
+        unique_code: eventUser.unique_link
       })
     } catch (error) {
       console.error('Error loading referral info:', error)
@@ -200,21 +182,22 @@ export default function EventPage() {
     try {
       toast.loading('Processando pagamento...', { id: 'checkout' })
 
-      // Pegar o ID do colaborador do referral (se houver)
+      // Pegar o unique_link e collaborator_id do referral (se houver)
       const refParam = searchParams.get('ref')
       let collaboratorId = null
+      let uniqueLinkUsed = null
       
       if (refParam && referralInfo) {
-        // Buscar o collaborator_id do link de referência
-        const { data: linkData } = await supabase
-          .from('collaborator_links')
-          .select('id')
-          .eq('unique_code', refParam)
+        // Buscar o collaborator na tabela event_users
+        const { data: eventUserData } = await supabase
+          .from('event_users')
+          .select('user_id, unique_link')
+          .eq('unique_link', refParam)
           .single()
         
-        if (linkData) {
-          const link = linkData as { id: string }
-          collaboratorId = link.id
+        if (eventUserData) {
+          collaboratorId = eventUserData.user_id
+          uniqueLinkUsed = eventUserData.unique_link
         }
       }
 
@@ -237,6 +220,7 @@ export default function EventPage() {
           price: ticket.price,
           userId: user.id,
           collaboratorId,
+          uniqueLinkUsed,
         }),
       })
 

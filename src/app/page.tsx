@@ -41,10 +41,15 @@ export default function HomePage() {
         .order('created_at', { ascending: false })
         .limit(3)
 
-      if (error) throw error
-      setFeaturedEvents(data || [])
+      if (error) {
+        console.error('Error loading events:', error)
+        setFeaturedEvents([])
+      } else {
+        setFeaturedEvents(data || [])
+      }
     } catch (error) {
       console.error('Error loading events:', error)
+      setFeaturedEvents([])
     } finally {
       setLoadingEvents(false)
     }
@@ -81,76 +86,77 @@ export default function HomePage() {
         {/* Header - Glass Effect apenas no hero */}
         <header className="absolute top-0 left-0 right-0 z-50 bg-white/10 backdrop-blur-md border-b border-white/20">
           <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center">
-            <Link href="/" className="flex items-center space-x-2">
-              <TicketIcon className="h-8 w-8 text-white" />
-              <span className="text-2xl font-bold text-white drop-shadow-lg">
-                TicketHub
-              </span>
-            </Link>
-            <div className="flex items-center space-x-4">
-              <Link
-                href="/events"
-                className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
-              >
-                Eventos
+            <div className="flex justify-between items-center">
+              <Link href="/" className="flex items-center space-x-2">
+                <TicketIcon className="h-8 w-8 text-white" />
+                <span className="text-2xl font-bold text-white drop-shadow-lg">
+                  TicketHub
+                </span>
               </Link>
               
-              {loading ? (
-                <div className="w-20 h-8 animate-pulse rounded bg-white/20"></div>
-              ) : user ? (
-                <>
-                  <Link
-                    href="/dashboard"
-                    className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
-                  >
-                    Dashboard
-                  </Link>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-3 px-2 py-1 rounded-full bg-white/5">
-                      <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-semibold text-sm select-none">
-                        {initials}
-                      </div>
-                      <div className="flex flex-col leading-tight">
-                        <span className="text-sm font-medium text-white drop-shadow">
-                          Olá, {formatName(profile?.full_name) || (user?.email ? user.email.split('@')[0] : '')}
-                        </span>
-                        <span className="text-xs text-white/70">Bem-vindo</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleSignOut}
-                      aria-label="Sair"
-                      className="ml-2 inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30 transition"
+              <div className="flex items-center space-x-4">
+                <Link
+                  href="/events"
+                  className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
+                >
+                  Eventos
+                </Link>
+                
+                {loading ? (
+                  <div className="w-20 h-8 animate-pulse rounded bg-white/20"></div>
+                ) : user ? (
+                  <>
+                    <Link
+                      href="/dashboard"
+                      className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
                     >
-                      <ArrowRightOnRectangleIcon className="w-4 h-4" />
-                      <span className="text-sm font-medium">Sair</span>
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <Link
-                    href="/login"
-                    className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
-                  >
-                    Entrar
-                  </Link>
-                  <Link
-                    href="/register"
-                    className="px-4 py-2 rounded-lg font-medium transition-all bg-white/20 backdrop-blur-sm text-white border border-white/30 hover:bg-white/30"
-                  >
-                    Registar
-                  </Link>
-                </>
-              )}
+                      Dashboard
+                    </Link>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 px-2 py-1 rounded-full bg-white/5">
+                        <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-white font-semibold text-sm select-none">
+                          {initials}
+                        </div>
+                        <div className="flex flex-col leading-tight">
+                          <span className="text-sm font-medium text-white drop-shadow">
+                            Olá, {formatName(profile?.full_name) || (user?.email ? user.email.split('@')[0] : '')}
+                          </span>
+                          <span className="text-xs text-white/70">Bem-vindo</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleSignOut}
+                        aria-label="Sair"
+                        className="ml-2 inline-flex items-center gap-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30 transition"
+                      >
+                        <ArrowRightOnRectangleIcon className="w-4 h-4" />
+                        <span className="text-sm font-medium">Sair</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      className="font-medium text-white/90 hover:text-white drop-shadow transition-colors"
+                    >
+                      Entrar
+                    </Link>
+                    <Link
+                      href="/register"
+                      className="px-4 py-2 rounded-lg font-medium transition-all bg-white/20 backdrop-blur-sm text-white border border-white/30 hover:bg-white/30"
+                    >
+                      Registar
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        </nav>
-      </header>
+          </nav>
+        </header>
 
-      {/* Animated Hero Section */}
-      <AnimatedHero />
+        {/* Animated Hero Section */}
+        <AnimatedHero />
       </div>
 
       {/* Features Section - Visible on Scroll */}
