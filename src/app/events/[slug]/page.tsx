@@ -1,530 +1,697 @@
-'use client'
+"use client";
 
-import { useEffect, useState } from 'react'
-import { useParams, useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-import { useAuth } from '@/contexts/AuthContext'
-import { 
-  CalendarIcon, 
-  MapPinIcon, 
+import { useEffect, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { getEventStatus, canPurchaseTickets } from "@/lib/eventStatus";
+import EventCountdown from "@/components/EventCountdown";
+import Link from "next/link";
+import {
+  CalendarIcon,
+  MapPinIcon,
   UserIcon,
   TicketIcon,
   ShareIcon,
   HeartIcon,
   ClockIcon,
-  SparklesIcon,
-  ArrowLeftIcon
-} from '@heroicons/react/24/outline'
-import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
-import toast from 'react-hot-toast'
+  ArrowLeftIcon,
+  MinusIcon,
+  PlusIcon,
+  ShoppingCartIcon,
+  UserCircleIcon,
+  ArrowRightIcon,
+  BriefcaseIcon,
+} from "@heroicons/react/24/outline";
+import { HeartIcon as HeartSolidIcon } from "@heroicons/react/24/solid";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import toast from "react-hot-toast";
 
 interface Event {
-  id: string
-  title: string
-  slug: string
-  description: string
-  event_date: string
-  event_time: string
-  location: string
-  category: string
-  base_price: number
-  image_url: string | null
-  association_code: string
-  organizer: {
-    full_name: string
-    username: string
-  }
+  id: string;
+  title: string;
+  slug: string;
+  description: string;
+  event_date: string;
+  event_time: string;
+  location: string;
+  category: string;
+  base_price: number;
+  image_url: string | null;
+  association_code: string;
+  organizer_id: string;
 }
 
 interface Ticket {
-  id: string
-  name: string
-  description: string | null
-  price: number
-  stock: number
-  sold: number
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  stock: number;
+  sold: number;
 }
 
 interface ReferralInfo {
-  collaborator_name: string
-  unique_code: string
+  collaborator_name: string;
+  unique_code: string;
 }
 
 export default function EventPage() {
-  const params = useParams()
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const { user } = useAuth()
-  const [event, setEvent] = useState<Event | null>(null)
-  const [tickets, setTickets] = useState<Ticket[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isFavorite, setIsFavorite] = useState(false)
-  const [selectedTickets, setSelectedTickets] = useState<Record<string, number>>({})
-  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(null)
+  const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user, profile, loading: authLoading, signOut } = useAuth();
+  const [event, setEvent] = useState<Event | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [selectedTickets, setSelectedTickets] = useState<
+    Record<string, number>
+  >({});
+  const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(null);
 
   useEffect(() => {
-    loadEvent()
-    loadReferralInfo()
-  }, [params.slug, searchParams])
+    loadEvent();
+    loadReferralInfo();
+  }, [params.slug, searchParams]);
 
   async function loadEvent() {
     try {
-      setLoading(true)
+      setLoading(true);
+      const slug = params.slug as string;
 
-      const slug = params.slug as string
-
-      // Buscar evento pelo slug
       const { data: eventData, error: eventError } = await supabase
-        .from('events')
-        .select(`
-          *,
-          organizer:users!events_organizer_id_fkey(full_name, username)
-        `)
-        .eq('slug', slug)
-        .single()
+        .from("events")
+        .select("*")
+        .eq("slug", slug)
+        .single();
 
-      if (eventError) throw eventError
+      if (eventError) throw eventError;
 
-      if (!eventData) {
-        throw new Error('Evento não encontrado')
-      }
+      setEvent(eventData);
 
-      const event = eventData as any
-      setEvent(event)
-
-      // Buscar tickets do evento
       const { data: ticketsData, error: ticketsError } = await supabase
-        .from('tickets')
-        .select('*')
-        .eq('event_id', event.id)
-        .order('price', { ascending: true })
+        .from("tickets")
+        .select("*")
+        .eq("event_id", eventData.id)
+        .gt("stock", 0);
 
-      if (ticketsError) throw ticketsError
+      if (ticketsError) throw ticketsError;
 
-      setTickets(ticketsData || [])
-    } catch (error: any) {
-      console.error('Error loading event:', error)
-      toast.error('Erro ao carregar evento')
-      router.push('/events')
+      setTickets(ticketsData || []);
+    } catch (error) {
+      console.error("Error loading event:", error);
+      toast.error("Erro ao carregar evento");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   async function loadReferralInfo() {
-    const refCode = searchParams.get('ref')
-    if (!refCode) return
+    const ref = searchParams.get("ref");
+    if (!ref) return;
 
     try {
-      // Buscar o colaborador pelo unique_link na tabela event_users
-      const { data: eventUserData, error: eventUserError } = await supabase
-        .from('event_users')
-        .select(`
-          unique_link,
-          user_id,
-          user:users!event_users_user_id_fkey(full_name)
-        `)
-        .eq('unique_link', refCode)
-        .single()
+      const { data, error } = await supabase
+        .from("referral_links")
+        .select("collaborator_name, unique_code")
+        .eq("unique_code", ref)
+        .single();
 
-      console.log('Event user data:', eventUserData)
-      console.log('Event user error:', eventUserError)
-
-      if (eventUserError || !eventUserData) {
-        console.error('Error loading collaborator:', eventUserError)
-        return
-      }
-
-      const eventUser = eventUserData as any
-
-      setReferralInfo({
-        collaborator_name: eventUser.user?.full_name || 'Um colaborador',
-        unique_code: eventUser.unique_link
-      })
+      if (error) throw error;
+      setReferralInfo(data);
     } catch (error) {
-      console.error('Error loading referral info:', error)
+      console.error("Error loading referral info:", error);
     }
   }
 
-  function handleTicketQuantityChange(ticketId: string, quantity: number) {
-    setSelectedTickets(prev => {
-      if (quantity <= 0) {
-        const newState = { ...prev }
-        delete newState[ticketId]
-        return newState
+  const handleTicketQuantityChange = (ticketId: string, delta: number) => {
+    setSelectedTickets((prev) => {
+      const current = prev[ticketId] || 0;
+      const newValue = Math.max(0, current + delta);
+
+      const ticket = tickets.find((t) => t.id === ticketId);
+      if (ticket && newValue > ticket.stock - ticket.sold) {
+        toast.error("Quantidade indisponível");
+        return prev;
       }
-      return { ...prev, [ticketId]: quantity }
-    })
-  }
 
-  function calculateTotal() {
-    return Object.entries(selectedTickets).reduce((total, [ticketId, quantity]) => {
-      const ticket = tickets.find(t => t.id === ticketId)
-      return total + (ticket ? ticket.price * quantity : 0)
-    }, 0)
-  }
+      if (newValue === 0) {
+        const { [ticketId]: _, ...rest } = prev;
+        return rest;
+      }
 
-  async function handlePurchase() {
+      return { ...prev, [ticketId]: newValue };
+    });
+  };
+
+  const handlePurchase = () => {
     if (!user) {
-      toast.error('Faça login para comprar bilhetes')
-      router.push('/login')
-      return
+      toast.error("Você precisa fazer login para comprar bilhetes");
+      router.push("/login");
+      return;
     }
 
-    const selectedCount = Object.keys(selectedTickets).length
-    if (selectedCount === 0) {
-      toast.error('Selecione pelo menos um bilhete')
-      return
-    }
+    const ref = searchParams.get("ref");
+    const queryString = new URLSearchParams({
+      tickets: JSON.stringify(selectedTickets),
+      ...(ref && { ref }),
+    }).toString();
 
+    router.push(`/payment/${event?.id}?${queryString}`);
+  };
+
+  const totalAmount = Object.entries(selectedTickets).reduce(
+    (sum, [ticketId, quantity]) => {
+      const ticket = tickets.find((t) => t.id === ticketId);
+      return sum + (ticket?.price || 0) * quantity;
+    },
+    0,
+  );
+
+  const totalTickets = Object.values(selectedTickets).reduce(
+    (sum, qty) => sum + qty,
+    0,
+  );
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: event?.title,
+          text: event?.description,
+          url: window.location.href,
+        });
+      } catch (error) {
+        console.error("Error sharing:", error);
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copiado para a área de transferência!");
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push("/");
+  };
+
+  const formatName = (name?: string | null) => {
+    if (!name) return "";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  };
+
+  const initials = (() => {
+    const raw = profile?.full_name || user?.email || "";
+    if (!raw) return "";
+    const parts = raw.split(" ").filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  })();
+
+  const formatEventDate = (date: string) => {
     try {
-      toast.loading('Processando pagamento...', { id: 'checkout' })
-
-      // Pegar o unique_link e collaborator_id do referral (se houver)
-      const refParam = searchParams.get('ref')
-      let collaboratorId = null
-      let uniqueLinkUsed = null
-      
-      if (refParam && referralInfo) {
-        // Buscar o collaborator na tabela event_users
-        const { data: eventUserData } = await supabase
-          .from('event_users')
-          .select('user_id, unique_link')
-          .eq('unique_link', refParam)
-          .single()
-        
-        if (eventUserData) {
-          collaboratorId = eventUserData.user_id
-          uniqueLinkUsed = eventUserData.unique_link
-        }
-      }
-
-      // Para cada tipo de bilhete selecionado, criar uma sessão de checkout
-      const firstTicketEntry = Object.entries(selectedTickets)[0]
-      const [ticketId, quantity] = firstTicketEntry
-      const ticket = tickets.find(t => t.id === ticketId)!
-
-      // Criar sessão de checkout do Stripe
-      const response = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          eventId: event!.id,
-          eventTitle: event!.title,
-          ticketType: ticket.name,
-          quantity,
-          price: ticket.price,
-          userId: user.id,
-          collaboratorId,
-          uniqueLinkUsed,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao criar sessão de pagamento')
-      }
-
-      toast.success('Redirecionando para pagamento...', { id: 'checkout' })
-
-      // Redirecionar para o Stripe Checkout
-      if (data.url) {
-        window.location.href = data.url
-      }
-    } catch (error: any) {
-      console.error('Error purchasing tickets:', error)
-      toast.error(error.message || 'Erro ao processar compra', { id: 'checkout' })
+      const eventDate = new Date(date);
+      return format(eventDate, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
+    } catch {
+      return "Data inválida";
     }
-  }
-
-  function handleShare() {
-    const url = window.location.href
-    navigator.clipboard.writeText(url)
-    toast.success('Link copiado para a área de transferência!')
-  }
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent mb-4"></div>
+          <p className="text-gray-400">A carregar evento...</p>
+        </div>
       </div>
-    )
+    );
   }
 
   if (!event) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Evento não encontrado</h1>
-          <button
-            onClick={() => router.push('/events')}
-            className="mt-4 text-primary-600 hover:text-primary-700 transition-colors"
-          >
-            Voltar para eventos
-          </button>
+      <div className="min-h-screen bg-dark-950">
+        <header className="navbar-dark fixed top-0 left-0 right-0 z-50">
+          <nav className="container-custom py-4">
+            <div className="flex justify-between items-center">
+              <Link href="/" className="flex items-center space-x-3 group">
+                <div className="bg-gradient-to-br from-primary-500 to-primary-700 p-2 rounded-xl group-hover:shadow-glow transition-all duration-300">
+                  <TicketIcon className="h-7 w-7 text-white" />
+                </div>
+                <span className="text-2xl font-bold gradient-text">
+                  Tickethub
+                </span>
+              </Link>
+            </div>
+          </nav>
+        </header>
+        <div className="pt-24 pb-16">
+          <div className="container-custom text-center py-16">
+            <TicketIcon className="h-20 w-20 text-gray-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-white mb-2">
+              Evento não encontrado
+            </h1>
+            <p className="text-gray-400 mb-6">
+              O evento que procuras não existe ou foi removido
+            </p>
+            <Link href="/events" className="btn-primary">
+              Ver Todos os Eventos
+            </Link>
+          </div>
         </div>
       </div>
-    )
+    );
   }
 
-  const eventDate = new Date(event.event_date + 'T00:00:00')
-  const availableTickets = tickets.filter(t => t.stock - t.sold > 0)
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50">
-      {/* Header - glass effect to match site */}
-      <header className="glass-effect sticky top-0 left-0 right-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => router.push('/')}
-              className="flex items-center gap-2 text-gray-700 hover:text-primary-600 transition-colors font-medium"
-            >
-              <ArrowLeftIcon className="w-5 h-5" />
-              Voltar
-            </button>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleShare}
-                className="p-2.5 hover:bg-white/60 rounded-full transition-colors"
-                title="Compartilhar"
+    <div className="min-h-screen bg-dark-950">
+      {/* Header/Navbar */}
+      <header className="navbar-dark fixed top-0 left-0 right-0 z-50">
+        <nav className="container-custom py-4">
+          <div className="flex justify-between items-center">
+            <Link href="/" className="flex items-center space-x-3 group">
+              <div className="bg-gradient-to-br from-primary-500 to-primary-700 p-2 rounded-xl group-hover:shadow-glow transition-all duration-300">
+                <TicketIcon className="h-7 w-7 text-white" />
+              </div>
+              <span className="text-2xl font-bold gradient-text">
+                Tickethub
+              </span>
+            </Link>
+
+            <div className="hidden md:flex items-center space-x-8">
+              <Link
+                href="/events"
+                className="text-gray-300 hover:text-white font-medium transition-colors duration-200"
               >
-                <ShareIcon className="w-5 h-5 text-gray-600" />
-              </button>
-              <button
-                onClick={() => setIsFavorite(!isFavorite)}
-                className="p-2.5 hover:bg-white/60 rounded-full transition-colors"
-                title="Favoritar"
+                Ver eventos
+              </Link>
+              <Link
+                href="/events/create"
+                className="text-gray-300 hover:text-white font-medium transition-colors duration-200"
               >
-                {isFavorite ? (
-                  <HeartSolidIcon className="w-5 h-5 text-red-500" />
-                ) : (
-                  <HeartIcon className="w-5 h-5 text-gray-600" />
-                )}
-              </button>
+                Criar evento
+              </Link>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {authLoading ? (
+                <div className="w-10 h-10 rounded-full bg-dark-800 animate-pulse" />
+              ) : user ? (
+                <div className="flex items-center space-x-3">
+                  <Link
+                    href="/dashboard"
+                    className="hidden md:block text-sm text-gray-300 hover:text-white transition-colors"
+                  >
+                    Organizador
+                  </Link>
+                  <div className="relative group">
+                    <button className="avatar hover:ring-2 hover:ring-primary-500 transition-all duration-300">
+                      {initials || <UserCircleIcon className="h-6 w-6" />}
+                    </button>
+                    <div className="absolute right-0 mt-2 w-48 dropdown-menu opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                      <Link
+                        href="/dashboard"
+                        className="dropdown-item flex items-center space-x-2"
+                      >
+                        <BriefcaseIcon className="h-4 w-4" />
+                        <span>Dashboard</span>
+                      </Link>
+
+                      <button
+                        onClick={handleSignOut}
+                        className="dropdown-item flex items-center space-x-2 w-full text-left text-primary-400 hover:text-primary-300"
+                      >
+                        <ArrowRightIcon className="h-4 w-4" />
+                        <span>Sair</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center space-x-3">
+                  <Link
+                    href="/login"
+                    className="text-gray-300 hover:text-white font-medium transition-colors"
+                  >
+                    Entrar
+                  </Link>
+                  <Link href="/register" className="btn-primary">
+                    Registrar
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        </nav>
       </header>
 
-      {/* Conteúdo Principal */}
-      <div className="pt-20">
-        {/* Container com imagem centralizada (menor) */}
-        <div className="max-w-7xl mx-auto px-6 py-12">
-          {/* Imagem do Evento - Card flutuante (smaller) */}
-          <div className="max-w-sm mx-auto mb-10">
-            <div className="relative group">
-              <div className="aspect-[3/4] rounded-3xl overflow-hidden shadow-xl border border-gray-100 bg-white">
-                {event.image_url ? (
-                  <img
-                    src={event.image_url}
-                    alt={event.title}
-                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-                    <TicketIcon className="w-24 h-24 text-gray-400" />
-                  </div>
-                )}
-              </div>
-              {/* Botão de compartilhar flutuante na imagem */}
-              <button
-                onClick={handleShare}
-                className="absolute bottom-4 right-4 w-11 h-11 bg-white/90 backdrop-blur-sm hover:bg-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
-              >
-                <ShareIcon className="w-5 h-5 text-gray-700" />
-              </button>
-            </div>
-          </div>
+      {/* Main Content */}
+      <main className="pt-24 pb-16">
+        <div className="container-custom">
+          {/* Back Button */}
+          <Link
+            href="/events"
+            className="inline-flex items-center space-x-2 text-gray-400 hover:text-white transition-colors mb-8 group"
+          >
+            <ArrowLeftIcon className="h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+            <span>Voltar aos eventos</span>
+          </Link>
 
-        {/* Container Principal */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* Coluna Esquerda - Informações do Evento */}
-            <div className="lg:col-span-2">
-              {/* Card de Info Principal */}
-              <div className="bg-white rounded-3xl shadow-2xl p-8 md:p-10 mb-6">
-                {/* Categoria */}
-                <span className="inline-block px-4 py-1.5 bg-primary-100 text-primary-700 text-sm font-semibold rounded-full mb-4">
-                  {event.category}
-                </span>
-                
-                {/* Título */}
-                <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-                  {event.title}
-                </h1>
-
-                {/* Organizador */}
-                <div className="flex items-center gap-2 text-gray-600 mb-8">
-                  <UserIcon className="w-5 h-5" />
-                  <span className="font-medium">Por {event.organizer.full_name}</span>
+          {/* Referral Info Banner */}
+          {referralInfo && (
+            <div className="bg-gradient-to-r from-primary-600/20 to-primary-700/20 border border-primary-500/30 rounded-2xl p-4 mb-8 animate-fade-in">
+              <div className="flex items-center space-x-3">
+                <div className="bg-primary-600 p-2 rounded-lg">
+                  <UserIcon className="h-5 w-5 text-white" />
                 </div>
-
-                {/* Banner de Referência */}
-                {referralInfo && (
-                  <div className="mb-8 bg-gradient-to-r from-primary-50 to-blue-50 border border-primary-200 rounded-2xl p-5">
-                    <div className="flex items-center gap-3">
-                      <SparklesIcon className="w-6 h-6 text-primary-600" />
-                      <div>
-                        <p className="text-sm font-semibold text-gray-900">
-                          Recomendado por <span className="text-primary-600">{referralInfo.collaborator_name}</span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Grid de Informações */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 pb-8 border-b border-gray-200">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary-50 rounded-lg">
-                      <CalendarIcon className="w-5 h-5 text-primary-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Data</p>
-                      <p className="font-semibold text-gray-900">
-                        {format(eventDate, "dd 'de' MMMM, yyyy", { locale: ptBR })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary-50 rounded-lg">
-                      <ClockIcon className="w-5 h-5 text-primary-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Horário</p>
-                      <p className="font-semibold text-gray-900">{event.event_time}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 bg-primary-50 rounded-lg">
-                      <MapPinIcon className="w-5 h-5 text-primary-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Local</p>
-                      <p className="font-semibold text-gray-900">{event.location}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Descrição */}
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Sobre o evento</h2>
-                  <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">
-                    {event.description}
+                  <p className="text-white font-semibold">
+                    Recomendado por {referralInfo.collaborator_name}
+                  </p>
+                  <p className="text-gray-400 text-sm">
+                    Código de referência: {referralInfo.unique_code}
                   </p>
                 </div>
               </div>
             </div>
-            
-            {/* Coluna Direita - Bilhetes (Sticky) */}
-            <div className="lg:col-span-1">
-              <div className="sticky top-28">
-                <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl p-6 md:p-8 border border-gray-100">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-6">Selecione seus bilhetes</h2>
+          )}
 
-                  {availableTickets.length === 0 ? (
-                    <div className="text-center py-12">
-                      <div className="bg-gray-50 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3">
-                        <TicketIcon className="w-8 h-8 text-gray-400" />
-                      </div>
-                      <p className="text-gray-500 font-medium">Bilhetes esgotados</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Column - Event Details */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Event Image */}
+              <div className="relative h-96 rounded-3xl overflow-hidden group">
+                {event.image_url ? (
+                  <img
+                    src={event.image_url}
+                    alt={event.title}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gradient-to-br from-primary-900 to-dark-800 flex items-center justify-center">
+                    <TicketIcon className="h-32 w-32 text-white/20" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                {/* Category Badge */}
+                {event.category && (
+                  <div className="absolute top-6 left-6 bg-dark-900/90 backdrop-blur-sm text-white px-4 py-2 rounded-xl text-sm font-semibold border border-white/20">
+                    {event.category}
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="absolute top-6 right-6 flex items-center space-x-3">
+                  <button
+                    onClick={() => setIsFavorite(!isFavorite)}
+                    className="bg-dark-900/90 backdrop-blur-sm p-3 rounded-xl hover:bg-primary-600 transition-all duration-300 group/fav"
+                  >
+                    {isFavorite ? (
+                      <HeartSolidIcon className="h-6 w-6 text-primary-500 group-hover/fav:text-white" />
+                    ) : (
+                      <HeartIcon className="h-6 w-6 text-white" />
+                    )}
+                  </button>
+                  <button
+                    onClick={handleShare}
+                    className="bg-dark-900/90 backdrop-blur-sm p-3 rounded-xl hover:bg-primary-600 transition-all duration-300"
+                  >
+                    <ShareIcon className="h-6 w-6 text-white" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Event Info */}
+              <div className="card-dark p-8">
+                <h1 className="text-4xl font-bold text-white mb-6">
+                  {event.title}
+                </h1>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="flex items-start space-x-3">
+                    <div className="bg-primary-600/20 p-3 rounded-xl">
+                      <CalendarIcon className="h-6 w-6 text-primary-400" />
                     </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {tickets.map((ticket) => {
-                        const available = ticket.stock - ticket.sold
-                        const isAvailable = available > 0
-                        const quantity = selectedTickets[ticket.id] || 0
+                    <div>
+                      <p className="text-gray-400 text-sm">Data</p>
+                      <p className="text-white font-semibold">
+                        {formatEventDate(event.event_date)}
+                      </p>
+                    </div>
+                  </div>
 
-                        return (
-                          <div
-                            key={ticket.id}
-                            className={`border-2 rounded-2xl p-5 transition-all ${
-                              isAvailable
-                                ? 'border-gray-200 hover:border-primary-400 bg-white'
-                                : 'border-gray-100 bg-gray-50 opacity-50'
-                            }`}
-                          >
-                            <div className="flex justify-between items-start mb-3">
-                              <div className="flex-1">
-                                <h3 className="font-bold text-gray-900 text-lg mb-1">{ticket.name}</h3>
-                                {ticket.description && (
-                                  <p className="text-sm text-gray-500">{ticket.description}</p>
-                                )}
-                              </div>
-                            </div>
+                  <div className="flex items-start space-x-3">
+                    <div className="bg-primary-600/20 p-3 rounded-xl">
+                      <ClockIcon className="h-6 w-6 text-primary-400" />
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Hora</p>
+                      <p className="text-white font-semibold">
+                        {event.event_time}
+                      </p>
+                    </div>
+                  </div>
 
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-2xl font-bold text-gray-900">
-                                  €{ticket.price.toFixed(2)}
+                  <div className="flex items-start space-x-3 md:col-span-2">
+                    <div className="bg-primary-600/20 p-3 rounded-xl">
+                      <MapPinIcon className="h-6 w-6 text-primary-400" />
+                    </div>
+                    <div>
+                      <p className="text-gray-400 text-sm">Local</p>
+                      <p className="text-white font-semibold">
+                        {event.location}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="divider" />
+
+                <div>
+                  <h2 className="text-2xl font-bold text-white mb-4">
+                    Sobre o Evento
+                  </h2>
+                  <p className="text-gray-300 leading-relaxed whitespace-pre-line">
+                    {event.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Available Tickets */}
+              <div className="card-dark p-8">
+                <h2 className="text-2xl font-bold text-white mb-6">
+                  Bilhetes Disponíveis
+                </h2>
+
+                {/* Countdown de Fechamento */}
+                <EventCountdown
+                  eventDate={event.event_date}
+                  eventTime={event.event_time}
+                  className="mb-6"
+                />
+
+                {/* Verificar se evento expirou */}
+                {!canPurchaseTickets(event.event_date, event.event_time) ? (
+                  <div className="text-center py-12">
+                    <div className="bg-red-500/20 border-2 border-red-500/50 rounded-2xl p-8 mb-4">
+                      <TicketIcon className="h-16 w-16 text-red-400 mx-auto mb-4" />
+                      <h3 className="text-2xl font-bold text-red-400 mb-2">
+                        Evento Encerrado
+                      </h3>
+                      <p className="text-gray-400">
+                        A venda de bilhetes para este evento já terminou.
+                      </p>
+                      <p className="text-gray-500 text-sm mt-2">
+                        Os bilhetes fecharam 2 horas após o início do evento.
+                      </p>
+                    </div>
+                    <Link href="/events" className="btn-secondary">
+                      Ver Outros Eventos
+                    </Link>
+                  </div>
+                ) : tickets.length === 0 ? (
+                  <div className="text-center py-12">
+                    <TicketIcon className="h-16 w-16 text-gray-600 mx-auto mb-4" />
+                    <p className="text-gray-400">
+                      Nenhum bilhete disponível no momento
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {tickets.map((ticket) => {
+                      const available = ticket.stock - ticket.sold;
+                      const selectedQty = selectedTickets[ticket.id] || 0;
+
+                      return (
+                        <div
+                          key={ticket.id}
+                          className="bg-dark-800/50 border border-white/10 rounded-2xl p-6 hover:border-primary-500/50 transition-all duration-300"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="flex-1">
+                              <h3 className="text-xl font-bold text-white mb-2">
+                                {ticket.name}
+                              </h3>
+                              {ticket.description && (
+                                <p className="text-gray-400 text-sm">
+                                  {ticket.description}
                                 </p>
-                                <p className={`text-xs font-medium mt-1 ${isAvailable ? 'text-green-600' : 'text-red-600'}`}>
-                                  {isAvailable ? `${available} disponíveis` : 'Esgotado'}
-                                </p>
-                              </div>
-
-                              {isAvailable && (
-                                <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-1.5">
-                                  <button
-                                    onClick={() => handleTicketQuantityChange(ticket.id, quantity - 1)}
-                                    disabled={quantity === 0}
-                                    className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 hover:border-primary-500 hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-gray-700 transition-all"
-                                  >
-                                    −
-                                  </button>
-                                  <span className="w-8 text-center font-bold text-gray-900">{quantity}</span>
-                                  <button
-                                    onClick={() => handleTicketQuantityChange(ticket.id, quantity + 1)}
-                                    disabled={quantity >= available}
-                                    className="w-9 h-9 flex items-center justify-center rounded-lg bg-white border border-gray-200 hover:border-primary-500 hover:bg-primary-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-gray-700 transition-all"
-                                  >
-                                    +
-                                  </button>
-                                </div>
                               )}
+                              <p className="text-gray-500 text-sm mt-2">
+                                {available} disponíveis
+                              </p>
+                            </div>
+                            <div className="text-right ml-4">
+                              <div className="text-3xl font-bold text-primary-400">
+                                €{ticket.price.toFixed(2)}
+                              </div>
                             </div>
                           </div>
-                        )
-                      })}
 
-                      {/* Total e Botão de Compra */}
-                      {Object.keys(selectedTickets).length > 0 && (
-                        <div className="pt-6 mt-6 border-t-2 border-gray-100 space-y-4">
-                          <div className="flex justify-between items-center">
-                            <span className="text-lg font-semibold text-gray-700">Total</span>
-                            <span className="text-3xl font-bold text-gray-900">
-                              €{calculateTotal().toFixed(2)}
-                            </span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-3">
+                              <button
+                                onClick={() =>
+                                  handleTicketQuantityChange(ticket.id, -1)
+                                }
+                                disabled={selectedQty === 0}
+                                className="bg-dark-700 hover:bg-primary-600 disabled:bg-dark-800 disabled:cursor-not-allowed p-2 rounded-lg transition-colors"
+                              >
+                                <MinusIcon className="h-5 w-5 text-white" />
+                              </button>
+                              <span className="text-white font-bold text-lg min-w-[3rem] text-center">
+                                {selectedQty}
+                              </span>
+                              <button
+                                onClick={() =>
+                                  handleTicketQuantityChange(ticket.id, 1)
+                                }
+                                disabled={selectedQty >= available}
+                                className="bg-dark-700 hover:bg-primary-600 disabled:bg-dark-800 disabled:cursor-not-allowed p-2 rounded-lg transition-colors"
+                              >
+                                <PlusIcon className="h-5 w-5 text-white" />
+                              </button>
+                            </div>
+
+                            {selectedQty > 0 && (
+                              <div className="text-white font-semibold">
+                                Subtotal: €
+                                {(ticket.price * selectedQty).toFixed(2)}
+                              </div>
+                            )}
                           </div>
-                          <button
-                            onClick={handlePurchase}
-                            className="btn-gradient w-full py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2"
-                          >
-                            <TicketIcon className="w-5 h-5" />
-                            Continuar para pagamento
-                          </button>
-                          <p className="text-xs text-center text-gray-500">
-                            Pagamento seguro via Stripe
-                          </p>
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column - Purchase Summary */}
+            <div className="lg:col-span-1">
+              <div className="card-dark p-6 sticky top-24">
+                <h3 className="text-xl font-bold text-white mb-6">
+                  Resumo da Compra
+                </h3>
+
+                {totalTickets === 0 ? (
+                  <div className="text-center py-8">
+                    <ShoppingCartIcon className="h-12 w-12 text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-400 text-sm">
+                      Seleciona os bilhetes para continuar
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="space-y-3 mb-6">
+                      {Object.entries(selectedTickets).map(
+                        ([ticketId, quantity]) => {
+                          const ticket = tickets.find((t) => t.id === ticketId);
+                          if (!ticket) return null;
+
+                          return (
+                            <div
+                              key={ticketId}
+                              className="flex items-center justify-between text-sm"
+                            >
+                              <div className="flex-1">
+                                <p className="text-white font-medium">
+                                  {ticket.name}
+                                </p>
+                                <p className="text-gray-400">
+                                  {quantity} x €{ticket.price.toFixed(2)}
+                                </p>
+                              </div>
+                              <p className="text-white font-semibold">
+                                €{(ticket.price * quantity).toFixed(2)}
+                              </p>
+                            </div>
+                          );
+                        },
                       )}
                     </div>
-                  )}
-                </div>
+
+                    <div className="divider" />
+
+                    <div className="flex items-center justify-between mb-6">
+                      <span className="text-gray-400">Total de Bilhetes</span>
+                      <span className="text-white font-semibold">
+                        {totalTickets}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between mb-6">
+                      <span className="text-xl font-bold text-white">
+                        Total
+                      </span>
+                      <span className="text-2xl font-bold text-primary-400">
+                        €{totalAmount.toFixed(2)}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={handlePurchase}
+                      className="w-full btn-primary flex items-center justify-center space-x-2"
+                    >
+                      <ShoppingCartIcon className="h-5 w-5" />
+                      <span>Comprar Bilhetes</span>
+                    </button>
+
+                    <p className="text-gray-400 text-xs text-center mt-4">
+                      Pagamento seguro • Confirmação instantânea
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-dark-900 border-t border-white/10 py-12 mt-16">
+        <div className="container-custom">
+          <div className="text-center">
+            <Link href="/" className="inline-flex items-center space-x-3 mb-4">
+              <div className="bg-gradient-to-br from-primary-500 to-primary-700 p-2 rounded-xl">
+                <TicketIcon className="h-6 w-6 text-white" />
+              </div>
+              <span className="text-xl font-bold gradient-text">Tickethub</span>
+            </Link>
+            <p className="text-gray-400 text-sm">
+              Copyright © 2022. Powered by Tickethub
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
-  )
+  );
 }

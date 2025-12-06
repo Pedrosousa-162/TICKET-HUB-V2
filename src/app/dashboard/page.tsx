@@ -1,39 +1,63 @@
-'use client'
+"use client";
 
-import { useAuth } from '@/contexts/AuthContext'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { 
-  PlusIcon, 
-  TicketIcon, 
-  UserGroupIcon, 
+import { useAuth } from "@/contexts/AuthContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import {
+  PlusIcon,
+  TicketIcon,
+  UserGroupIcon,
   ChartBarIcon,
   CalendarIcon,
-  ClipboardDocumentIcon,
-  Cog6ToothIcon
-} from '@heroicons/react/24/outline'
-import { toast } from 'react-hot-toast'
+  ArrowRightOnRectangleIcon,
+  EyeIcon,
+  PencilIcon,
+  TrashIcon,
+  UserCircleIcon,
+  ArrowRightIcon,
+  BriefcaseIcon,
+  CurrencyEuroIcon,
+  UsersIcon,
+  ChartPieIcon,
+} from "@heroicons/react/24/outline";
+import { toast } from "react-hot-toast";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface Event {
-  id: string
-  title: string
-  slug: string
-  event_date: string
-  event_time: string
-  location: string
-  category: string
-  image_url: string | null
-  association_code: string
+  id: string;
+  title: string;
+  slug: string;
+  event_date: string;
+  event_time: string;
+  location: string;
+  category: string;
+  image_url: string | null;
+  association_code: string;
+}
+
+interface Ticket {
+  id: string;
+  event_id: string;
+  name: string;
+  price: number;
+  stock: number;
+}
+
+interface TicketPurchased {
+  price: number;
+  ticket_id: string;
+  status: string;
 }
 
 interface Stats {
-  totalEvents: number
-  totalTicketsSold: number
-  totalRevenue: number
-  collaborations: number
+  totalEvents: number;
+  totalTicketsSold: number;
+  totalRevenue: number;
+  collaborations: number;
 }
 
 export default function DashboardPage() {
@@ -41,281 +65,457 @@ export default function DashboardPage() {
     <ProtectedRoute>
       <DashboardContent />
     </ProtectedRoute>
-  )
+  );
 }
 
 function DashboardContent() {
-  const { user, profile, signOut } = useAuth()
-  const router = useRouter()
-  const [events, setEvents] = useState<Event[]>([])
+  const { user, profile, signOut } = useAuth();
+  const router = useRouter();
+  const [events, setEvents] = useState<Event[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalEvents: 0,
     totalTicketsSold: 0,
     totalRevenue: 0,
     collaborations: 0,
-  })
-  const [loading, setLoading] = useState(true)
+  });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
-      loadDashboardData()
+      loadDashboardData();
     }
-  }, [user])
+  }, [user]);
+
+  // Refresh data when window gains focus (para atualizar após compras)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (user && !loading) {
+        loadDashboardData();
+      }
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [user, loading]);
 
   async function loadDashboardData() {
     try {
-      // Load user's events
+      // 1. Buscar TODOS os eventos do organizador
       const { data: eventsData } = await supabase
-        .from('events')
-        .select('*')
-        .eq('organizer_id', user?.id)
-        .order('created_at', { ascending: false })
+        .from("events")
+        .select("*")
+        .eq("organizer_id", user?.id || "")
+        .order("created_at", { ascending: false });
 
-      if (eventsData) {
-        setEvents(eventsData)
-        setStats(prev => ({ ...prev, totalEvents: eventsData.length }))
+      if (!eventsData || eventsData.length === 0) {
+        setEvents([]);
+        setStats({
+          totalEvents: 0,
+          totalTicketsSold: 0,
+          totalRevenue: 0,
+          collaborations: 0,
+        });
+        setLoading(false);
+        return;
       }
 
-      // Load collaborations
+      setEvents(eventsData as Event[]);
+
+      // 2. Para cada evento, buscar tickets e calcular vendas (mesma lógica do manage)
+      let totalSalesAllEvents = 0;
+      let totalRevenueAllEvents = 0;
+
+      for (const event of eventsData as Event[]) {
+        // Buscar tipos de bilhete deste evento
+        const { data: ticketsData } = await supabase
+          .from("tickets")
+          .select("*")
+          .eq("event_id", event.id)
+          .order("price", { ascending: true });
+
+        if (ticketsData && ticketsData.length > 0) {
+          // Para cada tipo de bilhete, contar vendas (igual à página de gestão)
+          for (const ticket of ticketsData as Ticket[]) {
+            // Contar bilhetes vendidos pela tabela tickets_purchased
+            const { count } = await supabase
+              .from("tickets_purchased")
+              .select("*", { count: "exact", head: true })
+              .eq("event_id", event.id)
+              .eq("ticket_type", ticket.name);
+
+            const sold = count || 0;
+            totalSalesAllEvents += sold;
+            totalRevenueAllEvents += sold * Number(ticket.price || 0);
+          }
+        }
+      }
+
+      // 3. Buscar TODOS os colaboradores dos MEUS eventos (eventos que EU organizei)
+      const eventIds = eventsData.map((e: Event) => e.id);
       const { data: collabData } = await supabase
-        .from('event_users')
-        .select('*')
-        .eq('user_id', user?.id)
-        .neq('role', 'organizer')
+        .from("event_users")
+        .select("*")
+        .in("event_id", eventIds)
+        .neq("role", "organizer");
 
-      if (collabData) {
-        setStats(prev => ({ ...prev, collaborations: collabData.length }))
-      }
+      // 4. Atualizar estatísticas totais
+      setStats({
+        totalEvents: eventsData.length,
+        totalTicketsSold: totalSalesAllEvents,
+        totalRevenue: totalRevenueAllEvents,
+        collaborations: collabData?.length || 0,
+      });
 
-      // Load tickets stats
-      const { data: transactionsData } = await supabase
-        .from('transactions')
-        .select('quantity, total_amount')
-        .eq('seller_id', user?.id)
-        .eq('status', 'completed')
-
-      if (transactionsData) {
-        const totalTickets = transactionsData.reduce((acc, t) => acc + t.quantity, 0)
-        const totalRevenue = transactionsData.reduce((acc, t) => acc + Number(t.total_amount), 0)
-        setStats(prev => ({
-          ...prev,
-          totalTicketsSold: totalTickets,
-          totalRevenue,
-        }))
-      }
+      console.log("📊 Estatísticas agregadas de todos os eventos:", {
+        totalEventos: eventsData.length,
+        totalBilhetesVendidos: totalSalesAllEvents,
+        receitaTotal: totalRevenueAllEvents,
+        colaboradoresNosMeusEventos: collabData?.length || 0,
+      });
     } catch (error) {
-      console.error('Error loading dashboard:', error)
+      console.error("❌ Erro ao carregar dashboard:", error);
+      toast.error("Erro ao carregar dados do dashboard");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   const handleSignOut = async () => {
-    await signOut()
-    toast.success('Logout realizado com sucesso')
-    router.push('/')
-  }
+    await signOut();
+    router.push("/");
+  };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
+  const handleDeleteEvent = async (eventId: string) => {
+    if (!confirm("Tem certeza que deseja excluir este evento?")) return;
+
+    try {
+      const { error } = await supabase
+        .from("events")
+        .delete()
+        .eq("id", eventId);
+
+      if (error) throw error;
+
+      toast.success("Evento excluído com sucesso!");
+      loadDashboardData();
+    } catch (error) {
+      console.error("Error deleting event:", error);
+      toast.error("Erro ao excluir evento");
+    }
+  };
+
+  const formatName = (name?: string | null) => {
+    if (!name) return "";
+    return name
+      .split(" ")
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  };
+
+  const initials = (() => {
+    const raw = profile?.full_name || user?.email || "";
+    if (!raw) return "";
+    const parts = raw.split(" ").filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  })();
+
+  const formatEventDate = (date: string) => {
+    try {
+      return format(new Date(date), "d 'de' MMMM 'de' yyyy", { locale: ptBR });
+    } catch {
+      return "Data inválida";
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50">
-      {/* Header - Glass Effect */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen bg-dark-950">
+      {/* Header/Navbar */}
+      <header className="navbar-dark fixed top-0 left-0 right-0 z-50">
+        <nav className="container-custom py-4">
           <div className="flex justify-between items-center">
-            <Link href="/" className="flex items-center space-x-2 group">
-              <TicketIcon className="h-8 w-8 text-primary-600 group-hover:text-primary-700 transition-colors" />
-              <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-blue-600 bg-clip-text text-transparent">TicketHub</span>
+            <Link href="/" className="flex items-center space-x-3 group">
+              <div className="bg-gradient-to-br from-primary-500 to-primary-700 p-2 rounded-xl group-hover:shadow-glow transition-all duration-300">
+                <TicketIcon className="h-7 w-7 text-white" />
+              </div>
+              <span className="text-2xl font-bold gradient-text">
+                Tickethub
+              </span>
             </Link>
-            <div className="flex items-center space-x-4">
-              <span className="text-gray-700 font-medium">Olá, {profile?.full_name}</span>
-              <button
-                onClick={handleSignOut}
-                className="text-gray-700 hover:text-red-600 font-medium transition-colors"
+
+            <div className="hidden md:flex items-center space-x-8">
+              <Link
+                href="/events"
+                className="text-gray-300 hover:text-white font-medium transition-colors duration-200"
               >
-                Sair
-              </button>
+                Ver eventos
+              </Link>
+              <Link
+                href="/events/create"
+                className="text-gray-300 hover:text-white font-medium transition-colors duration-200"
+              >
+                Criar evento
+              </Link>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              <div className="relative group">
+                <button className="avatar hover:ring-2 hover:ring-primary-500 transition-all duration-300">
+                  {initials || <UserCircleIcon className="h-6 w-6" />}
+                </button>
+                <div className="absolute right-0 mt-2 w-48 dropdown-menu opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                  <Link
+                    href="/dashboard"
+                    className="dropdown-item flex items-center space-x-2"
+                  >
+                    <BriefcaseIcon className="h-4 w-4" />
+                    <span>Dashboard</span>
+                  </Link>
+
+                  <button
+                    onClick={handleSignOut}
+                    className="dropdown-item flex items-center space-x-2 w-full text-left text-primary-400 hover:text-primary-300"
+                  >
+                    <ArrowRightIcon className="h-4 w-4" />
+                    <span>Sair</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        </nav>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Welcome */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-2">Bem-vindo de volta, {profile?.full_name}!</p>
-        </div>
+      {/* Main Content */}
+      <main className="pt-24 pb-16">
+        <div className="container-custom">
+          {/* Welcome Section */}
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-white mb-2">
+              Olá, {formatName(profile?.full_name) || "Organizador"}! 👋
+            </h1>
+            <p className="text-gray-400 text-lg">
+              Bem-vindo ao teu painel de organizador
+            </p>
+          </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Meus Eventos</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalEvents}</p>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+            {/* Total Events */}
+            <div className="stats-card group hover:scale-105 transition-all duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <div className="bg-primary-600/20 p-3 rounded-xl group-hover:bg-primary-600/30 transition-colors">
+                  <CalendarIcon className="h-6 w-6 text-primary-400" />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                  Eventos
+                </span>
               </div>
-              <CalendarIcon className="h-10 w-10 text-primary-600" />
+              <div className="text-3xl font-bold text-white mb-1">
+                {loading ? (
+                  <div className="h-9 w-16 bg-gray-700 animate-pulse rounded"></div>
+                ) : (
+                  stats.totalEvents
+                )}
+              </div>
+              <p className="text-gray-400 text-sm">Total de eventos criados</p>
+            </div>
+
+            {/* Total Tickets Sold */}
+            <div className="stats-card group hover:scale-105 transition-all duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <div className="bg-green-600/20 p-3 rounded-xl group-hover:bg-green-600/30 transition-colors">
+                  <TicketIcon className="h-6 w-6 text-green-400" />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                  Bilhetes
+                </span>
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {loading ? (
+                  <div className="h-9 w-16 bg-gray-700 animate-pulse rounded"></div>
+                ) : (
+                  stats.totalTicketsSold.toLocaleString("pt-PT")
+                )}
+              </div>
+              <p className="text-gray-400 text-sm">Bilhetes vendidos</p>
+            </div>
+
+            {/* Total Revenue */}
+            <div className="stats-card group hover:scale-105 transition-all duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <div className="bg-yellow-600/20 p-3 rounded-xl group-hover:bg-yellow-600/30 transition-colors">
+                  <CurrencyEuroIcon className="h-6 w-6 text-yellow-400" />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                  Receita
+                </span>
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {loading ? (
+                  <div className="h-9 w-24 bg-gray-700 animate-pulse rounded"></div>
+                ) : (
+                  `€${stats.totalRevenue.toLocaleString("pt-PT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                )}
+              </div>
+              <p className="text-gray-400 text-sm">Receita total</p>
+            </div>
+
+            {/* Collaborations */}
+            <div className="stats-card group hover:scale-105 transition-all duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <div className="bg-blue-600/20 p-3 rounded-xl group-hover:bg-blue-600/30 transition-colors">
+                  <UsersIcon className="h-6 w-6 text-blue-400" />
+                </div>
+                <span className="text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                  Colaboradores
+                </span>
+              </div>
+              <div className="text-3xl font-bold text-white mb-1">
+                {loading ? (
+                  <div className="h-9 w-16 bg-gray-700 animate-pulse rounded"></div>
+                ) : (
+                  stats.collaborations
+                )}
+              </div>
+              <p className="text-gray-400 text-sm">Nos meus eventos</p>
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Bilhetes Vendidos</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalTicketsSold}</p>
-              </div>
-              <TicketIcon className="h-10 w-10 text-green-600" />
+          {/* Quick Actions */}
+          <div className="mb-12">
+            <h2 className="text-2xl font-bold text-white mb-6">
+              Ações Rápidas
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Link
+                href="/events/create"
+                className="card-dark-hover p-6 flex items-center space-x-4"
+              >
+                <div className="bg-primary-600 p-3 rounded-xl">
+                  <PlusIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-semibold mb-1">
+                    Criar Evento
+                  </h3>
+                  <p className="text-gray-400 text-sm">
+                    Cria um novo evento e começa a vender bilhetes
+                  </p>
+                </div>
+                <ArrowRightIcon className="h-5 w-5 text-gray-400 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+              </Link>
+
+              <Link
+                href="/associations"
+                className="card-dark-hover p-6 flex items-center space-x-4"
+              >
+                <div className="bg-blue-600 p-3 rounded-xl">
+                  <UserGroupIcon className="h-6 w-6 text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-semibold mb-1">Associações</h3>
+                  <p className="text-gray-400 text-sm">
+                    Gerir as tuas associações e colaboradores
+                  </p>
+                </div>
+                <ArrowRightIcon className="h-5 w-5 text-gray-400 group-hover:text-primary-400 group-hover:translate-x-1 transition-all" />
+              </Link>
             </div>
           </div>
 
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Receita Total</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">
-                  €{stats.totalRevenue.toFixed(2)}
+          {/* Events Section */}
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Meus Eventos</h2>
+              <Link href="/events/create" className="btn-primary">
+                <PlusIcon className="h-5 w-5 mr-2" />
+                Criar Evento
+              </Link>
+            </div>
+
+            {loading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="skeleton h-80 rounded-2xl" />
+                ))}
+              </div>
+            ) : events.length === 0 ? (
+              <div className="card-dark p-12 text-center">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-dark-800 mb-4">
+                  <CalendarIcon className="h-10 w-10 text-gray-600" />
+                </div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Nenhum evento criado
+                </h3>
+                <p className="text-gray-400 mb-6">
+                  Começa a criar o teu primeiro evento e a vender bilhetes
                 </p>
-              </div>
-              <ChartBarIcon className="h-10 w-10 text-blue-600" />
-            </div>
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-gray-100 p-6 hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-sm">Colaborações</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.collaborations}</p>
-              </div>
-              <UserGroupIcon className="h-10 w-10 text-purple-600" />
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-100 p-6 mb-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Ações Rápidas</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link
-              href="/events/create"
-              className="flex items-center space-x-3 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-600 hover:bg-primary-50 transition-all duration-200"
-            >
-              <PlusIcon className="h-6 w-6 text-primary-600" />
-              <span className="font-medium text-gray-900">Criar Novo Evento</span>
-            </Link>
-
-            <Link
-              href="/associations"
-              className="flex items-center space-x-3 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-600 hover:bg-primary-50 transition-all duration-200"
-            >
-              <UserGroupIcon className="h-6 w-6 text-primary-600" />
-              <span className="font-medium text-gray-900">Minhas Associações</span>
-            </Link>
-
-            <Link
-              href="/events"
-              className="flex items-center space-x-3 p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-primary-600 hover:bg-primary-50 transition-all duration-200"
-            >
-              <TicketIcon className="h-6 w-6 text-primary-600" />
-              <span className="font-medium text-gray-900">Ver Todos Eventos</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* My Events */}
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-gray-100">
-          <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-bold text-gray-900">Meus Eventos</h2>
-          </div>
-          <div className="p-6">
-            {events.length === 0 ? (
-              <div className="text-center py-12">
-                <CalendarIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500 mb-4">Ainda não criou nenhum evento</p>
-                <Link
-                  href="/events/create"
-                  className="inline-flex items-center space-x-2 bg-gradient-to-r from-primary-600 to-blue-600 text-white px-6 py-3 rounded-lg hover:shadow-lg hover:scale-105 font-medium transition-all duration-200"
-                >
-                  <PlusIcon className="h-5 w-5" />
-                  <span>Criar Primeiro Evento</span>
+                <Link href="/events/create" className="btn-primary">
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  Criar Primeiro Evento
                 </Link>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {events.map((event) => (
-                  <div
-                    key={event.id}
-                    className="group border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl hover:scale-[1.02] transition-all duration-300"
-                  >
-                    <Link href={`/events/${event.slug}`}>
-                      <div className="aspect-video bg-gray-200 relative">
-                        {event.image_url && (
-                          <img
-                            src={event.image_url}
-                            alt={event.title}
-                            className="w-full h-full object-cover"
-                          />
-                        )}
-                        <div className="absolute top-2 right-2 bg-white px-2 py-1 rounded text-xs font-medium">
-                          {event.category}
+                  <div key={event.id} className="event-card">
+                    <div className="relative h-48 overflow-hidden">
+                      {event.image_url ? (
+                        <img
+                          src={event.image_url}
+                          alt={event.title}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-primary-900 to-dark-800 flex items-center justify-center">
+                          <CalendarIcon className="h-16 w-16 text-white/20" />
+                        </div>
+                      )}
+                      <div className="image-overlay" />
+                      {event.category && (
+                        <div className="event-category">{event.category}</div>
+                      )}
+                    </div>
+
+                    <div className="p-6">
+                      <h3 className="text-xl font-bold text-white mb-3 group-hover:text-primary-400 transition-colors line-clamp-2">
+                        {event.title}
+                      </h3>
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                          <CalendarIcon className="h-4 w-4" />
+                          <span>{formatEventDate(event.event_date)}</span>
+                        </div>
+                        <div className="flex items-center space-x-2 text-gray-400 text-sm">
+                          <TicketIcon className="h-4 w-4" />
+                          <span>Código: {event.association_code}</span>
                         </div>
                       </div>
-                      <div className="p-4">
-                        <h3 className="font-bold text-gray-900 mb-2 group-hover:text-primary-600">
-                          {event.title}
-                        </h3>
-                        <div className="flex items-center text-sm text-gray-600 mb-1">
-                          <CalendarIcon className="h-4 w-4 mr-1" />
-                          {new Date(event.event_date).toLocaleDateString('pt-PT')} às {event.event_time}
-                        </div>
-                        <div className="flex items-center text-sm text-gray-600 mb-3">
-                          📍 {event.location}
-                        </div>
-                      </div>
-                    </Link>
-                    
-                    {/* Association Code */}
-                    <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-2">
-                      {/* Manage Button */}
-                      <Link
-                        href={`/events/${event.slug}/manage`}
-                        className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-primary-600 to-blue-600 text-white py-2 rounded-lg hover:shadow-lg hover:scale-105 font-medium transition-all duration-200 mb-2"
-                      >
-                        <Cog6ToothIcon className="w-5 h-5" />
-                        Gerenciar Evento
-                      </Link>
-                      
-                      {/* Association Code */}
-                      <div className="flex items-center justify-between bg-primary-50 p-3 rounded-lg">
-                        <div className="flex-1">
-                          <p className="text-xs text-primary-600 font-medium mb-1">
-                            Código de Associação
-                          </p>
-                          <p className="font-mono font-bold text-primary-900 text-lg tracking-wider">
-                            {event.association_code}
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(event.association_code)
-                            toast.success('Código copiado!')
-                          }}
-                          className="ml-2 p-2 hover:bg-primary-100 rounded-lg transition-colors"
-                          title="Copiar código"
+
+                      <div className="flex items-center space-x-2 pt-4 border-t border-white/10">
+                        <Link
+                          href={`/events/${event.slug}`}
+                          className="flex-1 btn-secondary text-center text-sm py-2"
                         >
-                          <ClipboardDocumentIcon className="h-5 w-5 text-primary-600" />
+                          <EyeIcon className="h-4 w-4 inline mr-1" />
+                          Ver
+                        </Link>
+                        <Link
+                          href={`/events/${event.slug}/manage`}
+                          className="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-center text-sm py-2 px-4 rounded-lg transition-colors"
+                        >
+                          <PencilIcon className="h-4 w-4 inline mr-1" />
+                          Gerir
+                        </Link>
+                        <button
+                          onClick={() => handleDeleteEvent(event.id)}
+                          className="bg-red-600/20 hover:bg-red-600 text-red-400 hover:text-white p-2 rounded-lg transition-colors"
+                        >
+                          <TrashIcon className="h-4 w-4" />
                         </button>
                       </div>
-                      <p className="text-xs text-gray-500 text-center">
-                        Compartilhe este código com colaboradores
-                      </p>
                     </div>
                   </div>
                 ))}
@@ -324,6 +524,23 @@ function DashboardContent() {
           </div>
         </div>
       </main>
+
+      {/* Footer */}
+      <footer className="bg-dark-900 border-t border-white/10 py-12 mt-16">
+        <div className="container-custom">
+          <div className="text-center">
+            <Link href="/" className="inline-flex items-center space-x-3 mb-4">
+              <div className="bg-gradient-to-br from-primary-500 to-primary-700 p-2 rounded-xl">
+                <TicketIcon className="h-6 w-6 text-white" />
+              </div>
+              <span className="text-xl font-bold gradient-text">Tickethub</span>
+            </Link>
+            <p className="text-gray-400 text-sm">
+              Copyright © 2022. Powered by Tickethub
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
-  )
+  );
 }

@@ -2,62 +2,151 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Prevent emoji gradient issues */
-.emoji-fix {
-  -webkit-text-fill-color: initial;
-  background-clip: initial;
-  -webkit-background-clip: initial;
+@layer base {
+  body {
+    @apply bg-dark-950 text-gray-100;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
+  }
 }
 
-/* Custom scrollbar */
+@layer components {
+  /* Navbar Dark */
+  .navbar-dark {
+    @apply bg-dark-900/95 backdrop-blur-lg border-b border-white/5;
+  }
+
+  /* Glass Effect for Dark Theme */
+  .glass-dark {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+
+  /* Card Styles */
+  .card-dark {
+    @apply bg-gradient-to-br from-dark-800/80 to-dark-900/80 backdrop-blur-sm border border-white/10 rounded-2xl overflow-hidden hover:border-primary-500/50 transition-all duration-300;
+  }
+
+  .card-dark-hover {
+    @apply card-dark hover:shadow-card-hover hover:scale-[1.02] hover:-translate-y-1;
+  }
+
+  /* Event Card */
+  .event-card {
+    @apply relative bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl overflow-hidden border border-white/10 hover:border-primary-500/50 hover:shadow-card-hover transition-all duration-300;
+  }
+
+  /* Category Pills */
+  .category-pill {
+    @apply flex flex-col items-center justify-center p-6 rounded-2xl bg-gradient-to-br from-dark-800 to-dark-900 border border-white/10 hover:border-primary-500/50 hover:shadow-glow transition-all duration-300 cursor-pointer;
+  }
+
+  /* Button Styles */
+  .btn-primary {
+    @apply inline-flex items-center justify-center bg-gradient-to-r from-primary-600 to-primary-700 text-white px-6 py-3 rounded-xl font-semibold hover:from-primary-500 hover:to-primary-600 hover:shadow-glow transition-all duration-300 hover:scale-105;
+  }
+
+  .btn-secondary {
+    @apply bg-white/10 backdrop-blur-sm text-white px-6 py-3 rounded-xl font-semibold border border-white/20 hover:bg-white/20 hover:border-primary-500/50 transition-all duration-300;
+  }
+
+  .btn-outline {
+    @apply bg-transparent border-2 border-primary-500 text-primary-400 px-6 py-3 rounded-xl font-semibold hover:bg-primary-500 hover:text-white transition-all duration-300;
+  }
+
+  /* Input Styles */
+  .input-dark {
+    @apply bg-dark-800 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all duration-300;
+  }
+
+  /* Search Bar */
+  .search-bar {
+    @apply flex items-center bg-dark-800/80 backdrop-blur-sm border border-white/10 rounded-2xl px-6 py-4 focus-within:border-primary-500/50 focus-within:shadow-glow transition-all duration-300;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-500/20 text-primary-400 border border-primary-500/30;
+  }
+
+  .badge-success {
+    @apply badge bg-green-500/20 text-green-400 border border-green-500/30;
+  }
+
+  .badge-warning {
+    @apply badge bg-yellow-500/20 text-yellow-400 border border-yellow-500/30;
+  }
+
+  /* Section Title */
+  .section-title {
+    @apply text-3xl md:text-4xl font-bold text-white mb-8;
+  }
+
+  /* Gradient Text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-400 via-primary-500 to-accent-gold bg-clip-text text-transparent;
+  }
+
+  /* Hero Section */
+  .hero-gradient {
+    @apply bg-gradient-to-br from-dark-950 via-dark-900 to-primary-950;
+  }
+}
+
+@layer utilities {
+  /* Custom Scrollbar */
+  .scrollbar-dark::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-track {
+    @apply bg-dark-900;
+  }
+
+  .scrollbar-dark::-webkit-scrollbar-thumb {
+    @apply bg-primary-600 rounded-full hover:bg-primary-500;
+  }
+
+  /* Text Shadows */
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .text-shadow-lg {
+    text-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Backdrop Blur */
+  .backdrop-blur-heavy {
+    backdrop-filter: blur(20px);
+  }
+}
+
+/* Custom Scrollbar Global */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-dark-900;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gradient-to-b from-primary-400 to-primary-600 rounded-full;
+  @apply bg-primary-600 rounded-full hover:bg-primary-500;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-gradient-to-b from-primary-500 to-primary-700;
+/* Smooth Scroll */
+html {
+  scroll-behavior: smooth;
 }
 
-/* Animations */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-fadeIn {
-  animation: fadeIn 0.3s ease-out;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-slideUp {
-  animation: slideUp 0.5s ease-out;
-}
-
+/* Loading Animation */
 @keyframes shimmer {
   0% {
     background-position: -1000px 0;
@@ -67,27 +156,144 @@
   }
 }
 
+@keyframes gridMove {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(50px, 50px);
+  }
+}
+
 .animate-shimmer {
   animation: shimmer 2s infinite;
-  background: linear-gradient(to right, #f0f0f0 4%, #e0e0e0 25%, #f0f0f0 36%);
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.05) 4%,
+    rgba(255, 255, 255, 0.1) 25%,
+    rgba(255, 255, 255, 0.05) 36%
+  );
   background-size: 1000px 100%;
 }
 
-/* Smooth transitions for all interactive elements */
-@layer utilities {
-  .transition-all-smooth {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  
-  .glass-effect {
-    @apply bg-white/80 backdrop-blur-md border border-gray-200/50;
-  }
-  
-  .card-hover {
-    @apply hover:shadow-2xl hover:scale-[1.02] transition-all duration-300;
-  }
-  
-  .btn-gradient {
-    @apply bg-gradient-to-r from-primary-600 to-blue-600 text-white hover:shadow-lg hover:scale-105 transition-all duration-200;
-  }
+/* Skeleton Loading */
+.skeleton {
+  @apply animate-shimmer bg-dark-800 rounded-xl;
+}
+
+/* Image Overlay */
+.image-overlay {
+  @apply absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent;
+}
+
+/* Card Gradient Overlay */
+.card-gradient-overlay {
+  @apply absolute inset-0 bg-gradient-to-t from-dark-900 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300;
+}
+
+/* Focus Visible */
+.focus-ring {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-dark-900;
+}
+
+/* Transition Utilities */
+.transition-smooth {
+  @apply transition-all duration-300 ease-in-out;
+}
+
+.transition-fast {
+  @apply transition-all duration-150 ease-in-out;
+}
+
+/* Hover Lift Effect */
+.hover-lift {
+  @apply hover:-translate-y-1 hover:shadow-2xl transition-all duration-300;
+}
+
+/* Glow Effect */
+.glow-on-hover {
+  @apply hover:shadow-glow transition-shadow duration-300;
+}
+
+/* Date Badge */
+.date-badge {
+  @apply absolute top-4 right-4 bg-primary-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg z-10;
+}
+
+/* Event Category */
+.event-category {
+  @apply absolute top-4 left-4 bg-dark-900/90 backdrop-blur-sm text-white px-4 py-2 rounded-xl text-xs font-semibold border border-white/20 z-10;
+}
+
+/* Price Tag */
+.price-tag {
+  @apply bg-gradient-to-r from-accent-gold to-accent-orange text-dark-900 px-4 py-2 rounded-xl font-bold;
+}
+
+/* Status Indicator */
+.status-online {
+  @apply inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse;
+}
+
+.status-offline {
+  @apply inline-block w-2 h-2 bg-gray-500 rounded-full;
+}
+
+/* Carousel Indicators */
+.carousel-indicator {
+  @apply w-2 h-2 rounded-full bg-white/30 hover:bg-white/60 transition-all duration-300 cursor-pointer;
+}
+
+.carousel-indicator-active {
+  @apply w-8 h-2 rounded-full bg-white;
+}
+
+/* Modal Backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/80 backdrop-blur-sm z-40;
+}
+
+/* Dropdown Menu */
+.dropdown-menu {
+  @apply absolute right-0 mt-2 w-56 rounded-xl bg-dark-800 border border-white/10 shadow-2xl py-2 z-50;
+}
+
+.dropdown-item {
+  @apply px-4 py-3 text-gray-300 hover:bg-white/10 hover:text-white transition-colors duration-200 cursor-pointer;
+}
+
+/* Avatar */
+.avatar {
+  @apply w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-semibold text-sm border-2 border-white/20;
+}
+
+.avatar-lg {
+  @apply w-16 h-16 text-xl;
+}
+
+/* Event Grid */
+.events-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6;
+}
+
+/* Stats Card */
+.stats-card {
+  @apply bg-gradient-to-br from-dark-800 to-dark-900 rounded-2xl p-6 border border-white/10 hover:border-primary-500/50 transition-all duration-300;
+}
+
+/* Divider */
+.divider {
+  @apply border-t border-white/10 my-8;
+}
+
+/* Container */
+.container-custom {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+}
+
+/* Prevent emoji gradient issues */
+.emoji-fix {
+  -webkit-text-fill-color: initial;
+  background-clip: initial;
+  -webkit-background-clip: initial;
 }

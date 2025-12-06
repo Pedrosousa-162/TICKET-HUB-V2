@@ -31,12 +31,22 @@ export default function SalesHistory({ eventId }: { eventId?: string }) {
 
   async function loadSales() {
     try {
+      // Load from tickets_purchased and group by sale_id
       let query = supabase
-        .from('sales')
+        .from('tickets_purchased')
         .select(`
-          *,
+          id,
+          sale_id,
+          event_id,
+          ticket_type,
+          buyer_email,
+          buyer_name,
+          price,
+          status,
+          created_at,
           event:events(title)
         `)
+        .eq('status', 'valid')
         .order('created_at', { ascending: false })
 
       if (eventId) {
@@ -45,8 +55,39 @@ export default function SalesHistory({ eventId }: { eventId?: string }) {
 
       const { data, error } = await query
 
-      if (error) throw error
-      setSales(data || [])
+      if (error) {
+        console.error('Error loading purchases:', error)
+        throw error
+      }
+
+      // Group tickets by sale_id to create sales
+      const salesMap = new Map<string, Sale>()
+      
+      data?.forEach((ticket: any) => {
+        const saleId = ticket.sale_id || ticket.id
+        
+        if (salesMap.has(saleId)) {
+          const existing = salesMap.get(saleId)!
+          existing.quantity += 1
+          existing.total_amount += Number(ticket.price)
+        } else {
+          salesMap.set(saleId, {
+            id: saleId,
+            event_id: ticket.event_id,
+            ticket_type: ticket.ticket_type,
+            quantity: 1,
+            total_amount: Number(ticket.price),
+            buyer_email: ticket.buyer_email,
+            buyer_name: ticket.buyer_name,
+            payment_status: 'completed',
+            created_at: ticket.created_at,
+            event: ticket.event
+          })
+        }
+      })
+
+      const salesArray = Array.from(salesMap.values())
+      setSales(salesArray)
     } catch (error) {
       console.error('Error loading sales:', error)
     } finally {
