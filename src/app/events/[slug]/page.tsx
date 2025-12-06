@@ -70,6 +70,8 @@ export default function EventPage() {
     Record<string, number>
   >({});
   const [referralInfo, setReferralInfo] = useState<ReferralInfo | null>(null);
+  const [collaboratorId, setCollaboratorId] = useState<string | null>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     loadEvent();
@@ -114,13 +116,21 @@ export default function EventPage() {
 
     try {
       const { data, error } = await supabase
-        .from("referral_links")
-        .select("collaborator_name, unique_code")
-        .eq("unique_code", ref)
-        .single();
+        .from("event_users")
+        .select("id, unique_link, users!inner(full_name)")
+        .eq("unique_link", ref)
+        .maybeSingle();
 
       if (error) throw error;
-      setReferralInfo(data);
+
+      if (data && data.id) {
+        setCollaboratorId(data.id);
+        setReferralInfo({
+          collaborator_name: data.users?.full_name || "Colaborador",
+          unique_code: data.unique_link,
+        });
+        toast.success("Link de colaborador aplicado!");
+      }
     } catch (error) {
       console.error("Error loading referral info:", error);
     }
